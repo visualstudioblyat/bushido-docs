@@ -1,0 +1,26 @@
+---
+title: Picture-in-Picture
+description: Pop videos out of the page into a floating window
+---
+
+Bushido auto-detects videos on the page. When it finds one, a PiP button appears in the sidebar.
+
+## How to Use
+
+1. Navigate to a page with a video (YouTube, Twitch, etc.)
+2. Wait a moment — Bushido polls for video elements
+3. The PiP button appears in the sidebar
+4. Click it — the video pops into a floating window
+
+Click the PiP button again to exit, or close the floating video.
+
+## How It Works
+
+Bushido runs a named Rust command (`detect_video`) that checks for `<video>` elements on the page. When you click PiP, another command (`toggle_pip`) injects a Shadow DOM overlay with a button that calls the browser's native `requestPictureInPicture()` API.
+
+The Shadow DOM means sites can't detect or block the PiP button — it's invisible to page scripts.
+
+## Limitations
+
+- The page needs an actual `<video>` element (some sites use custom players that don't expose one)
+- Some sites block PiP at the API level — Bushido removes the `disablePictureInPicture` attribute but can't override everything

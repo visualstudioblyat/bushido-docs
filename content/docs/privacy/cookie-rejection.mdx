@@ -1,0 +1,31 @@
+---
+title: Cookie Banner Rejection
+description: Automatically dismiss cookie consent popups
+---
+
+Bushido auto-clicks "reject all" on cookie consent banners. You never see them.
+
+## How It Works
+
+A script (`cookie_blocker.js`) is injected into every page. It knows about 8+ consent frameworks:
+
+- OneTrust
+- CookieBot
+- Didomi
+- TrustArc
+- Cookie Notice
+- GDPR Cookie Consent
+- Complianz
+- Generic "reject" / "decline" buttons
+
+The script watches for consent dialogs to appear (using `MutationObserver`) and clicks the reject/decline button automatically. If the banner uses an iframe, it handles that too.
+
+## Toggle On/Off
+
+Settings → Privacy & Security → Cookie banner auto-reject
+
+When you turn it off, `cookie_blocker.js` stops being injected into new pages. You'll start seeing cookie banners again.
+
+## Per-Site Whitelist
+
+If a site is on your shield whitelist, cookie rejection is also disabled for that site (same as ad blocking).

@@ -1,0 +1,49 @@
+---
+title: Build from Source
+description: Set up the dev environment and build Bushido locally
+---
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18+)
+- [Rust](https://rustup.rs/) (latest stable)
+- [Tauri CLI](https://v2.tauri.app/start/prerequisites/)
+
+## Clone and Run
+
+```bash
+git clone https://github.com/visualstudioblyat/bushido.git
+cd bushido
+npm install
+npx tauri dev
+```
+
+`tauri dev` starts the Vite dev server and launches the Tauri window with hot reload. Changes to React code update instantly. Changes to Rust code trigger a recompile.
+
+## Production Build
+
+```bash
+npx tauri build
+```
+
+Outputs an installer to `src-tauri/target/release/bundle/`.
+
+## Project Structure
+
+```
+bushido-browser/
+├── src/                  # React frontend
+│   ├── App.tsx           # Main app component
+│   ├── components/       # Sidebar, settings, NTP, command palette, etc.
+│   ├── styles/           # Global CSS
+│   └── types.ts          # TypeScript interfaces
+├── src-tauri/
+│   ├── src/
+│   │   ├── lib.rs        # All Rust commands (tab management, blocking, persistence)
+│   │   ├── blocker.rs    # Ad/tracker domain list
+│   │   ├── content_blocker.js   # Injected into pages for JS-level blocking
+│   │   ├── cookie_blocker.js    # Injected to auto-reject cookie banners
+│   │   └── shortcut_bridge.js   # Keyboard shortcut forwarding from webviews
+│   └── tauri.conf.json   # Tauri config (CSP, window settings)
+└── package.json
+```

@@ -1,0 +1,47 @@
+---
+title: Settings
+description: Configure search engine, privacy, appearance, and more
+---
+
+Open settings from the gear icon in the sidebar, or navigate to `bushido://settings`. It's a React-rendered page — no webview, loads instantly.
+
+## Sections
+
+### General
+
+- **Search engine** — Google (default), DuckDuckGo, Brave Search, Bing, or custom URL with `%s` placeholder
+- **On startup** — Restore previous session or open a new tab
+- **Show top sites** — Toggle the frecency grid on the new tab page
+- **Show clock** — Toggle the clock on the new tab page
+- **Show greeting** — Toggle the time-based greeting
+
+### Downloads
+
+- **Download location** — Where files save (system default if empty)
+- **Ask where to save** — Prompt before every download
+
+### Privacy & Security
+
+- **HTTPS-only mode** — Upgrade all connections to HTTPS, refuse HTTP
+- **Ad blocker** — Toggle the content blocker on/off
+- **Cookie banner auto-reject** — Toggle automatic "reject all" on consent popups
+- **Clear data on exit** — Wipe history and cookies when closing
+
+All of these actually control behavior. Turning off ad blocker stops injecting the content script. Turning off HTTPS-only allows HTTP navigation.
+
+### Appearance
+
+- **Compact mode** — Toggle compact mode (syncs with `Ctrl+Shift+B`)
+- **Tab suspend timeout** — How long before inactive tabs get suspended
+
+### Keyboard Shortcuts
+
+Read-only reference of all shortcuts.
+
+### About
+
+Version number and project description.
+
+## Persistence
+
+Settings save to disk (debounced 500ms) and load before session restore on startup. They persist across restarts.

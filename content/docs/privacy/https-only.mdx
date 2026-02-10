@@ -1,0 +1,25 @@
+---
+title: HTTPS-Only Mode
+description: All traffic upgraded to HTTPS, HTTP connections refused
+---
+
+HTTPS-only mode is on by default. Every connection gets upgraded to HTTPS. If a site only serves HTTP, the navigation is blocked.
+
+## How It Works
+
+Two things happen:
+
+1. **URL upgrade** — When you type `http://example.com` or a page links to it, Bushido rewrites it to `https://example.com` before making the request
+2. **Navigation guard** — The `on_navigation` callback in Rust checks every URL. If it starts with `http://` and HTTPS-only is enabled, the navigation returns `false` and the page doesn't load
+
+## Toggle On/Off
+
+Settings → Privacy & Security → HTTPS-only mode
+
+When you turn it off, HTTP URLs are allowed through without upgrading. Useful if you're on a local network or hitting a dev server.
+
+## Why It Matters
+
+HTTP traffic is unencrypted. Anyone on your network (coffee shop wifi, ISP, etc.) can see exactly what you're doing. HTTPS encrypts the connection between you and the server.
+
+Most sites support HTTPS now. The ones that don't are usually sketchy.

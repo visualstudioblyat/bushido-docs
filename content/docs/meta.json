@@ -1,0 +1,11 @@
+{
+  "title": "Docs",
+  "pages": [
+    "---Getting Started---",
+    "getting-started",
+    "---User Manual---",
+    "user-manual",
+    "---Privacy & Security---",
+    "privacy"
+  ]
+}

@@ -1,0 +1,34 @@
+---
+title: Ad & Tracker Blocking
+description: How Bushido blocks ads and trackers at the core level
+---
+
+Bushido blocks ads and trackers at two levels — no extensions, no filter list downloads, no configuration needed.
+
+## Network-Level Blocking
+
+When a webview navigates to a URL, Rust checks the domain against a `HashSet` of 2000+ known ad/tracker domains. If it matches, the navigation is refused before the request ever leaves the browser.
+
+This happens in the `on_navigation` callback — it's fast because HashSet lookup is O(1).
+
+## JS-Level Blocking
+
+A content script (`content_blocker.js`) is injected into every page via `initialization_script()`. It:
+
+- Overrides `fetch()` and `XMLHttpRequest` to block requests to tracker domains
+- Hides known ad elements with CSS
+- Uses a `MutationObserver` to catch dynamically injected ads
+
+The blocked count shows up on the shield icon in the sidebar.
+
+## Per-Site Whitelist
+
+Some sites break when blocking is on. Click the shield icon → toggle whitelist for that domain. The whitelist persists to disk.
+
+Whitelisted sites skip both network-level and JS-level blocking.
+
+## Toggle On/Off
+
+Settings → Privacy & Security → Ad blocker
+
+When you turn it off, `content_blocker.js` stops being injected and domain blocking in `on_navigation` is skipped. It takes effect on new tabs and page loads — existing tabs keep their current state until refreshed.

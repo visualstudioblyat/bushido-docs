@@ -1,0 +1,45 @@
+---
+title: Keyboard Shortcuts
+description: Every shortcut in Bushido
+---
+
+All shortcuts are registered globally via Rust — they work even when a webpage has focus, not just when the sidebar is focused.
+
+## Tab Management
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+T` | New tab |
+| `Ctrl+W` | Close tab |
+| `Ctrl+Tab` | Next tab |
+| `Ctrl+Shift+Tab` | Previous tab |
+
+## Navigation
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+L` | Focus URL bar |
+| `Ctrl+F` | Find in page |
+| `Ctrl+K` | Command palette |
+
+## Features
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+D` | Bookmark current page |
+| `Ctrl+H` | Toggle history panel |
+| `Ctrl+B` | Toggle sidebar |
+| `Ctrl+Shift+B` | Toggle compact mode |
+| `Ctrl+Shift+R` | Toggle reader mode |
+
+## Workspaces
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+1` – `Ctrl+9` | Switch to workspace by number |
+
+## How Global Shortcuts Work
+
+Bushido registers OS-level hotkeys through `tauri_plugin_global_shortcut`. When a shortcut fires, Rust evals a function on the main webview (`window.__bushidoGlobalShortcut`), which dispatches the action in React.
+
+Child webviews also have a fallback — `shortcut_bridge.js` captures keydown events and forwards them to Rust via title encoding, which then emits them as events to the main window.

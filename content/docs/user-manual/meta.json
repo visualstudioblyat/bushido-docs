@@ -1,0 +1,4 @@
+{
+  "title": "User Manual",
+  "pages": ["workspaces", "command-palette", "compact-mode", "reader-mode", "pip", "tab-suspender", "settings", "shortcuts"]
+}

@@ -1,0 +1,31 @@
+---
+title: Reader Mode
+description: Strip pages to clean text with customizable font and theme
+---
+
+Reader mode strips a webpage down to its content — just the text and images, no ads, no sidebars, no clutter.
+
+## Toggle It
+
+`Ctrl+Shift+R` or click the reader icon in the sidebar. Press again to exit.
+
+## What It Does
+
+Bushido finds the main content on the page (looks for `<article>`, `<main>`, `[role="main"]`, or the largest text block) and renders it in a clean overlay. Everything else gets hidden.
+
+## Customize
+
+The reader has settings you can adjust:
+
+| Setting | Options |
+|---------|---------|
+| Font size | 12px – 28px |
+| Font | Serif or sans-serif |
+| Theme | Dark, light, or sepia |
+| Line width | 600px – 900px |
+
+Changes apply instantly. Pick what's comfortable for your eyes.
+
+## How It Works Under the Hood
+
+Reader mode runs as a named Rust command (`toggle_reader`) that injects CSS and JS into the active webview. No arbitrary eval — it's a specific, scoped command. The original page content is preserved and restored when you exit.

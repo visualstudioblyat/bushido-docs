@@ -1,0 +1,36 @@
+---
+title: Contribute
+description: How to contribute to Bushido Browser
+---
+
+Bushido is open source under the [MPL 2.0](https://github.com/visualstudioblyat/bushido/blob/main/LICENSE) license.
+
+## How to Contribute
+
+1. Fork the repo
+2. Create a branch (`git checkout -b my-feature`)
+3. Make your changes
+4. Make sure `npx tsc --noEmit` and `cargo check` pass
+5. Open a PR
+
+## What to Work On
+
+Check [open issues](https://github.com/visualstudioblyat/bushido/issues) or the roadmap in the README. If you're unsure, open an issue first to discuss.
+
+## Code Style
+
+- camelCase for functions, PascalCase for types
+- Short names: `getTab` not `getTabByIdentifier`
+- No JSDoc or verbose comments
+- Early returns: `if (!tab) return null`
+- Match existing patterns in the codebase
+- No unnecessary abstractions
+
+## Tech Stack
+
+| Layer | Tech |
+|-------|------|
+| Shell | Tauri v2 (Rust) |
+| Frontend | React + TypeScript |
+| Rendering | System WebView (WebView2) |
+| Blocking | Rust HashSet + JS injection |
