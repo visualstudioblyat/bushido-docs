@@ -1,0 +1,59 @@
+---
+title: Downloads
+description: Built-in download manager with parallel chunked downloads, crash recovery, and cookie-aware resumption
+---
+
+Bushido has its own download engine built in Rust. No browser extension, no separate app. It intercepts every download, runs it through a custom pipeline, and gives you pause/resume, crash recovery, and multi-connection acceleration out of the box.
+
+## How It Works
+
+When you click a download link, Bushido intercepts it via WebView2's `DownloadStarting` event and suppresses the default browser UI. The file gets routed through our engine instead.
+
+For files over 1MB on servers that support Range headers, Bushido splits the download into up to 6 simultaneous segments. Each segment grabs its own byte range and writes to the file at the exact offset. This saturates your bandwidth the way IDM does — except it's built into the browser.
+
+For small files or servers without Range support, it falls back to a single connection. No unnecessary overhead.
+
+## Parallel Chunked Downloads
+
+| Detail | Value |
+|--------|-------|
+| Default segments | 6 |
+| Min file size for chunking | 1MB |
+| Min segment size | 512KB |
+| Dynamic splitting | Yes — idle workers split the largest remaining segment |
+
+When a fast segment finishes early, the orchestrator finds the segment with the most bytes remaining and splits it at the midpoint. A new worker picks up the second half. No idle connections.
+
+## Crash Recovery
+
+Every download writes a manifest file (`.part.json`) to disk alongside the partial file. The manifest stores per-segment progress, byte ranges, and cookies. If bushido crashes or you close it mid-download, each segment resumes from where it left off when you reopen. Most browsers lose your progress on close.
+
+## Cookie Extraction
+
+When a download starts, bushido grabs all cookies for that URL from the browser's cookie jar via `ICoreWebView2_2::CookieManager` and passes them to the download engine. Downloads from authenticated sites (Google Drive, Dropbox, etc.) work without any extra setup.
+
+## Download Panel
+
+The download panel is a slide-over in the sidebar. Click the download icon to open it. It shows all active, paused, completed, and failed downloads with a badge for the active count.
+
+### Controls
+
+| State | Actions |
+|-------|---------|
+| Downloading | Pause, cancel |
+| Paused | Resume (if server supports Range), cancel |
+| Completed | Open file, open folder |
+| Failed | Retry, remove |
+
+The segment count badge (e.g. "6x") shows next to the speed while a chunked download is running.
+
+## Settings
+
+In `bushido://settings` under Downloads:
+
+- **Download location** — Where files save. Defaults to your system downloads folder.
+- **Ask where to save** — Prompt for a location before every download.
+
+## How It Compares
+
+Chrome has parallel downloading behind a flag (`chrome://flags/#enable-parallel-downloading`), but it's off by default. None of the major browsers persist download state to disk — close the browser and your progress is gone. IDM handles all of this, but it's a $25 separate app with a browser extension. Bushido does it natively.
