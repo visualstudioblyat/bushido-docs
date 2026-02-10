@@ -1,34 +1,67 @@
 ---
 title: Ad & Tracker Blocking
-description: How Bushido blocks ads and trackers at the core level
+description: How Bushido blocks ads and trackers using Brave's adblock-rust engine
 ---
 
-Bushido blocks ads and trackers at two levels — no extensions, no filter list downloads, no configuration needed.
+Bushido blocks ads and trackers at two levels — network-level via Brave's adblock-rust engine, and page-level via CSS cosmetic hiding. No extensions, no configuration needed.
 
-## Network-Level Blocking
+## Network-Level Blocking (adblock-rust)
 
-When a webview navigates to a URL, Rust checks the domain against a `HashSet` of 2000+ known ad/tracker domains. If it matches, the navigation is refused before the request ever leaves the browser.
+Bushido embeds [adblock-rust](https://github.com/nicoverbruggen/adblock-rust), a production-grade Rust content blocking engine. It ships with **EasyList** and **EasyPrivacy** — about 140,000 filter rules that cover ad networks, trackers, analytics, and fingerprinting endpoints.
 
-This happens in the `on_navigation` callback — it's fast because HashSet lookup is O(1).
+Requests are intercepted at the WebView2 COM level via `WebResourceRequestedEventHandler`. This catches everything — scripts, images, iframes, XHR, fetch, CSS, fonts, websockets — before the browser even starts the connection. Page JavaScript cannot bypass this.
 
-## JS-Level Blocking
+### How it works
 
-A content script (`content_blocker.js`) is injected into every page via `initialization_script()`. It:
+1. On first startup, Bushido compiles the bundled filter lists into a binary engine (~400ms)
+2. The compiled engine is cached to disk (`engine.dat`)
+3. Every subsequent startup deserializes the cache in ~5ms
+4. Each request is checked against the engine — median matching time is **0.041ms**
 
-- Overrides `fetch()` and `XMLHttpRequest` to block requests to tracker domains
-- Hides known ad elements with CSS
-- Uses a `MutationObserver` to catch dynamically injected ads
+### What it blocks
 
-The blocked count shows up on the shield icon in the sidebar.
+- Ad networks (Google Ads, DoubleClick, Amazon Ads, etc.)
+- Trackers (Google Analytics, Facebook Pixel, Hotjar, etc.)
+- Fingerprinting endpoints
+- Malware domains
+- Cryptominer scripts
+- Social tracking widgets
+
+## Cosmetic Hiding (CSS)
+
+Some ads are served from the same domain as the page content (first-party ads). These can't be blocked at the network level without breaking the site. Bushido hides them with CSS rules injected into every page:
+
+- Google ad containers, Taboola, Outbrain, MGID
+- Sponsored content sections
+- YouTube ad renderers
+- Reddit promoted posts
+- Newsletter popups, notification prompts
+- Ad network containers (Mediavine, Ezoic, Freestar, AdThrive, etc.)
+
+About 150 CSS selectors cover the most common ad containers across the web.
+
+## Privacy Features
+
+The same content script also handles:
+
+- **WebRTC leak prevention** — filters STUN/TURN servers to prevent IP leaks
+- **Referrer policy** — sets `origin` to minimize tracking via referrer headers
+- **Do Not Track / Global Privacy Control** — sets `navigator.doNotTrack` and `navigator.globalPrivacyControl`
+- **Fingerprint resistance** — returns empty arrays for `navigator.plugins` and `navigator.mimeTypes`
+- **Battery API blocking** — removes `navigator.getBattery` to prevent battery-based fingerprinting
 
 ## Per-Site Whitelist
 
-Some sites break when blocking is on. Click the shield icon → toggle whitelist for that domain. The whitelist persists to disk.
+Some sites break when blocking is on. Click the shield icon in the sidebar to toggle the whitelist for that domain. The whitelist persists to disk.
 
-Whitelisted sites skip both network-level and JS-level blocking.
+Whitelisted sites skip both network-level blocking and cosmetic hiding.
 
 ## Toggle On/Off
 
-Settings → Privacy & Security → Ad blocker
+Settings > Privacy & Security > Ad blocker
 
-When you turn it off, `content_blocker.js` stops being injected and domain blocking in `on_navigation` is skipped. It takes effect on new tabs and page loads — existing tabs keep their current state until refreshed.
+When disabled, the adblock engine skips request checking and `content_blocker.js` stops being injected. Takes effect on new tabs and page loads.
+
+## Shield Badge
+
+The shield icon shows a count of blocked requests for the current tab. This count comes directly from the Rust-side COM handler — no JavaScript involved, no delays.
