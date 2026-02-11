@@ -15,11 +15,15 @@ A malicious page should never be able to: execute code in the main UI, access ot
 
 ## IPC Hardening
 
-### postMessage Bridge (v0.7.0+)
+### Tauri Isolation Pattern
 
-Child webviews communicate with Rust via `window.chrome.webview.postMessage`. This replaced an earlier `document.title` encoding hack that was visible to page scripts, subject to race conditions, and limited to ~1024 characters.
+Enabled since v0.8.0. A sandboxed iframe sits between the React frontend and Rust core. All IPC messages are encrypted with AES-GCM (keys regenerated every launch) and validated against a command whitelist before reaching Rust.
 
-Messages use a `__bushido` JSON namespace with server-side whitelist validation:
+The isolation bridge blocks unauthorized `invoke()` calls — if a compromised npm dependency tries to call an unrecognized command, it gets `null` back. Only 29 specific commands are allowed, plus Tauri's internal plugin prefixes.
+
+### postMessage Bridge
+
+Child webviews communicate with Rust via `window.chrome.webview.postMessage`. Messages use a `__bushido` JSON namespace with server-side whitelist validation:
 
 ```
 { "__bushido": "shortcut", "action": "new-tab" }
@@ -29,6 +33,12 @@ Messages use a `__bushido` JSON namespace with server-side whitelist validation:
 
 Only three namespaces are accepted: `shortcut`, `media`, `video`. Within `shortcut`, only 10 specific action strings are allowed. Everything else is silently dropped.
 
+**Origin validation**: The handler checks `Source()` on every incoming message and rejects anything not from `https://` or `http://` origins. Messages from `about:blank`, `data:`, `chrome-extension://`, or other non-web origins are dropped.
+
+### Per-Window Capabilities
+
+`invoke()` is scoped to `"windows": ["main"]` in the Tauri capability file. Child webviews can't call invoke at all — they only have `postMessage`, which goes through the COM handler with origin + namespace validation. The capability file explicitly lists allowed permissions instead of using the broad `core:default`.
+
 ### No Arbitrary eval()
 
 Zero `eval()` calls with user-controlled strings. All child webview interactions use named Rust commands:
@@ -36,19 +46,43 @@ Zero `eval()` calls with user-controlled strings. All child webview interactions
 - `toggle_reader` — injects/removes reader mode overlay
 - `toggle_pip` — injects Shadow DOM PiP button
 
-The old `eval_tab` command (which accepted arbitrary JS strings) was removed in v0.5.0.
-
 ### Content Security Policy
 
-The main UI webview has a strict CSP defined in `tauri.conf.json`. This blocks inline scripts, restricts connections, and prevents XSS in the privileged context. Child webviews are untrusted content and run with whatever CSP the visited site sets.
+The main UI webview has a strict CSP defined in `tauri.conf.json`. This blocks inline scripts, restricts connections, and prevents XSS in the privileged context.
+
+## WebView2 Hardening
+
+Every child webview has these settings disabled at the COM level:
+
+| Setting | Why |
+|---------|-----|
+| DevTools | CVE-2025-13632 — sandbox escape via crafted extensions |
+| Host Objects | Prevents unauthorized access to projected Rust methods |
+| Password Autosave | CVE-2025-14372 — use-after-free in Password Manager |
+| General Autofill | Reduces feature surface |
+| Status Bar | Prevents URL spoofing |
+
+## Process Isolation
+
+WebView2 browser arguments enforced on every child webview:
+
+| Flag | Effect |
+|------|--------|
+| `--site-per-process` | Every site runs in its own renderer process |
+| `--origin-agent-cluster=true` | Different origins within the same site get separate processes |
+| `--disable-quic` | Forces TCP, ensures `WebResourceRequested` intercepts all traffic |
+| `--disable-dns-prefetch` | Prevents DNS query leaks before the blocker acts |
+| `--disable-background-networking` | No speculative connections |
+| `--enable-features=ThirdPartyStoragePartitioning,PartitionedCookies` | CHIPS — third-party cookies partitioned by top-level site |
+| `--disable-features=UserAgentClientHint` | Blocks Client Hints fingerprinting |
+
+The Rust process runs at `ABOVE_NORMAL_PRIORITY_CLASS` for UI responsiveness during heavy ad blocking. Max 50 tabs enforced server-side.
 
 ## Input Sanitization
 
 ### Tab Titles
 
-The `on_document_title_changed` callback in Rust strips `<` and `>` from all titles before emitting to React. This prevents stored XSS via malicious `<title>` tags that could execute in the sidebar when rendered.
-
-Session restore applies the same sanitization when rebuilding tabs from disk.
+The `on_document_title_changed` callback in Rust strips `<` and `>` from all titles before emitting to React. Prevents stored XSS via malicious `<title>` tags.
 
 ### URL Scheme Blocklist
 
@@ -57,87 +91,99 @@ Session restore applies the same sanitization when rebuilding tabs from disk.
 - `navigate_tab` — before navigating an existing webview
 - `on_navigation` callback — before allowing any in-page navigation
 
-React-side validation (`sanitizePanelUrl()`) adds defense-in-depth for panel URLs, stripping control characters and rejecting dangerous schemes before any Rust `invoke` call.
-
 ### Find-in-Page
 
-Search queries are escaped for `\n`, `\r`, `\`, and `'` before being passed to `window.find()`. Prevents string context breakout in the eval.
+Search queries are escaped for `\n`, `\r`, `\`, and `'` before being passed to `window.find()`.
 
 ## Script Injection Hardening
 
 ### Guard Variables
 
-All four injection scripts (`shortcut_bridge.js`, `media_listener.js`, `content_blocker.js`, `cookie_blocker.js`) use `Object.defineProperty` with `configurable: false` to register their guard variables. A malicious page can't `delete window.__bushidoPrivacy` to re-trigger script injection.
+All four injection scripts use `Object.defineProperty` with `configurable: false` to register their guard variables. A malicious page can't `delete window.__bushidoPrivacy` to re-trigger script injection.
 
 ### No Isolated Worlds (Windows Limitation)
 
-WebView2 on Windows does not support Chrome's "Isolated Worlds" for content scripts. Injected scripts share the page's global JavaScript namespace. This means:
-- A page could theoretically override `fetch` or `XMLHttpRequest` before Bushido's scripts run
-- Prototype pollution could alter injected script behavior
-
-Mitigations:
-- Using `Object.defineProperty` with `configurable: false` for all guards
-- Running network blocking at the COM level (unaffected by JS namespace pollution)
-- Keeping injected scripts minimal — they only handle cosmetic hiding and privacy headers
+WebView2 on Windows does not support Chrome's "Isolated Worlds" for content scripts. Injected scripts share the page's global JavaScript namespace. Mitigated by running all network blocking at the COM level (unaffected by JS namespace pollution).
 
 ## Network Security
 
+### Always-On Header Stripping
+
+`WebResourceRequested` runs for ALL tabs — even when ad blocking is off. Every outgoing request has these headers stripped or normalized:
+
+**Removed**: `Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, `Sec-CH-UA-Full-Version`, `Sec-CH-UA-Full-Version-List`, `Sec-CH-UA-Arch`, `Sec-CH-UA-Bitness`, `Sec-CH-UA-Model`, `Sec-CH-UA-Platform-Version`, `Sec-CH-UA-WoW64`, `Sec-Fetch-Dest`, `Sec-Fetch-Mode`, `Sec-Fetch-Site`, `Sec-Fetch-User`, `X-Client-Data`, `X-Requested-With`
+
+**Normalized**: `Referer` — path stripped at COM level, only origin sent.
+
 ### Ad Blocking at the COM Level
 
-Bushido uses Brave's [adblock-rust](https://github.com/nicoverbruggen/adblock-rust) engine with ~140,000 filter rules from EasyList and EasyPrivacy. Requests are intercepted via WebView2's `WebResourceRequestedEventHandler` at the COM level — before the browser starts the connection.
+adblock-rust engine with ~140,000 filter rules from EasyList and EasyPrivacy. Intercepts requests via `WebResourceRequestedEventHandler` before the browser starts the connection. Page JavaScript cannot bypass it.
 
-This catches scripts, images, iframes, XHR, fetch, CSS, fonts, and websockets. Page JavaScript cannot bypass it because the interception happens in the native layer, not in the JS runtime.
+### Service Worker Blocking
+
+`navigator.serviceWorker.register()` is overridden to return a rejected Promise. This prevents trackers from registering service workers that could bypass `WebResourceRequested` interception on subsequent visits.
 
 ### HTTPS-Only Mode
 
-All `http://` URLs are upgraded to `https://`. If HTTPS-only mode is enabled, plain HTTP navigations are refused entirely. Applied in both the Rust URL processing and the `on_navigation` callback.
+All `http://` URLs are upgraded to `https://`. Plain HTTP navigations are refused entirely when enabled.
 
-### Known Network Gaps
+## Fingerprinting Resistance
 
-- **Service workers**: Once registered, a service worker can respond to fetch events without triggering `WebResourceRequested`. A tracker that registers a service worker on first visit could bypass blocking on subsequent visits.
-- **WebRTC**: STUN/TURN servers are blocked via content script, but WebRTC data channels may bypass network-level interception.
-- **QUIC/HTTP3**: Unclear whether WebView2's `WebResourceRequested` intercepts QUIC traffic. Needs investigation.
-- **DNS prefetch / speculative connections**: May leak DNS queries before the blocker can act.
+16 fingerprinting vectors mitigated via `content_blocker.js` injection:
 
-## Process Safety
+| Vector | Mitigation |
+|--------|------------|
+| `navigator.plugins` / `mimeTypes` | Empty arrays |
+| `navigator.getBattery` | Undefined |
+| `navigator.hardwareConcurrency` | Returns 4 |
+| `navigator.language` / `languages` | `en-US` / `['en-US','en']` |
+| `navigator.platform` | `Win32` |
+| `screen.availWidth/Height` | Matches `screen.width/height` |
+| `screen.colorDepth/pixelDepth` | Returns 24 |
+| Canvas | 1-bit XOR noise on `toDataURL`/`toBlob` |
+| WebGL vendor/renderer | Spoofed to generic Intel UHD |
+| AudioContext | ±0.01 random noise on `getFloatFrequencyData` |
+| `navigator.connection` | Undefined |
+| `document.fonts` | Stub object (blocks enumeration) |
+| Service Workers | Registration blocked |
+| WebRTC | STUN/TURN servers filtered |
+
+## Crash Recovery
+
+### ProcessFailed Handler
+
+WebView2's `ProcessFailed` event detected at COM level. When a renderer process crashes, a `tab-crashed` event is emitted to React. Crashed tabs show a visual indicator in the sidebar — click to recreate the webview.
+
+### Error Boundary
+
+`react-error-boundary` wraps the entire app. If a render error occurs, a fallback UI appears with "Try again" instead of a white screen.
+
+### Global Rejection Handler
+
+`window.onunhandledrejection` catches fire-and-forget `invoke()` failures. Logs to console and prevents silent app breakage.
 
 ### Mutex Poisoning Recovery
 
-All `Mutex::lock().unwrap()` calls in `lib.rs` are replaced with `.lock().unwrap_or_else(|e| e.into_inner())`. If a thread panics while holding a lock, subsequent threads recover the data instead of cascading panics that crash the app.
-
-### Webview Lifecycle
-
-`close_tab` removes the tab ID from `WebviewState` before calling `wv.close()`. This prevents `layout_webviews` from trying to position a webview that's mid-destruction — the most likely cause of random crashes in earlier versions.
-
-### COM Error Recovery
-
-The unsafe WebView2 COM block uses `match` with early `return` instead of `.unwrap()`. If `CoreWebView2()` or `ICoreWebView2_4` cast fails (possible on older Windows versions), the webview still loads — it just doesn't get download interception or ad blocking.
-
-### Global Shortcut Registration
-
-Shortcut registration uses `.unwrap_or_else()` with a fallback to an empty builder. If another app holds a hotkey, Bushido starts without shortcuts instead of panic-crashing.
+All `Mutex::lock().unwrap()` calls replaced with `.unwrap_or_else(|e| e.into_inner())`. If a thread panics while holding a lock, subsequent threads recover the data instead of cascading panics.
 
 ## Download Security
 
 ### Path Traversal Prevention
 
-`Path::file_name()` extracts only the basename from download filenames before deduplication. A server sending `Content-Disposition: attachment; filename="../../../etc/malicious"` can't write outside the download directory.
+`Path::file_name()` extracts only the basename from download filenames. A server sending `Content-Disposition: attachment; filename="../../../etc/malicious"` can't write outside the download directory.
 
 ### Cookie-Aware Downloads
 
-Downloads capture cookies from the originating tab via the WebView2 cookie manager COM API for authenticated downloads. Cookies are passed as a header string to the Rust download engine — they're never written to disk or exposed to other tabs.
+Downloads capture cookies from the originating tab via the WebView2 cookie manager COM API. Cookies are passed as a header string to the Rust download engine — never written to disk or exposed to other tabs.
 
 ## Known Limitations
 
-Documented weaknesses not yet addressed:
-
-| Gap | Risk | Planned Fix |
-|-----|------|-------------|
-| Shared cookie jar | All tabs share one WebView2 User Data Folder. Cross-site tracking possible. | Per-site or per-workspace `CoreWebView2Profile` isolation |
-| No Tauri isolation pattern | No sandboxed iframe between untrusted content and IPC | Enable isolation pattern with dedicated bridge script |
-| Basic fingerprinting resistance | Only `navigator.plugins`, `mimeTypes`, `getBattery` blocked. Canvas, WebGL, AudioContext fingerprinting not mitigated. | Canvas noise, WebGL vendor spoofing, AudioContext jitter |
-| No per-window capabilities | All child webviews share the same Tauri capability set | Scope capabilities per webview label |
-| Service worker bypass | Registered service workers can respond without triggering network blocking | Investigate `ServiceWorkerRegistration` interception |
+| Gap | Risk | Notes |
+|-----|------|-------|
+| Shared first-party cookie jar | All tabs share one WebView2 User Data Folder. Third-party cookies are partitioned via CHIPS, but first-party cookies are shared. | Per-site UDF isolation requires separate browser processes per domain — high RAM cost |
+| No isolated worlds | WebView2 on Windows doesn't support script isolation. Injected scripts share the page's JS namespace. | Mitigated: all network blocking at COM level, unaffected by JS pollution |
+| WebRTC data channels | STUN/TURN blocked, but data channels may bypass network interception | Low risk — most tracking uses HTTP, not WebRTC |
+| TLS/JA4 fingerprint | Rust `reqwest` calls have a non-browser TLS fingerprint | Only affects internal requests (filter list updates), not user traffic |
 
 ## Found a Bug?
 
