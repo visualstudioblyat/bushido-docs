@@ -1,4 +1,4 @@
 {
   "title": "Privacy & Security",
-  "pages": ["ad-blocking", "https-only", "cookie-rejection"]
+  "pages": ["security", "ad-blocking", "https-only", "cookie-rejection"]
 }

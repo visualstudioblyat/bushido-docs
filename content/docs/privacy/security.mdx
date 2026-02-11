@@ -1,0 +1,144 @@
+---
+title: Security Architecture
+description: How Bushido hardens against browser-specific attacks
+---
+
+Bushido renders untrusted web content. Every site you visit runs arbitrary JavaScript in a child webview that shares the same OS process group as the browser UI. This page documents every mitigation that's been implemented and every known limitation.
+
+## Threat Model
+
+The security boundary is between:
+- **Trusted**: The main React UI webview (sidebar, tabs, settings) with access to Tauri's `invoke()` API
+- **Untrusted**: Child webviews (tabs, panels) that render arbitrary web pages
+
+A malicious page should never be able to: execute code in the main UI, access other tabs' data, read local files, or crash the browser process.
+
+## IPC Hardening
+
+### postMessage Bridge (v0.7.0+)
+
+Child webviews communicate with Rust via `window.chrome.webview.postMessage`. This replaced an earlier `document.title` encoding hack that was visible to page scripts, subject to race conditions, and limited to ~1024 characters.
+
+Messages use a `__bushido` JSON namespace with server-side whitelist validation:
+
+```
+{ "__bushido": "shortcut", "action": "new-tab" }
+{ "__bushido": "media", "state": "playing", "title": "..." }
+{ "__bushido": "video", "hasVideo": true }
+```
+
+Only three namespaces are accepted: `shortcut`, `media`, `video`. Within `shortcut`, only 10 specific action strings are allowed. Everything else is silently dropped.
+
+### No Arbitrary eval()
+
+Zero `eval()` calls with user-controlled strings. All child webview interactions use named Rust commands:
+- `detect_video` — checks for `<video>` elements
+- `toggle_reader` — injects/removes reader mode overlay
+- `toggle_pip` — injects Shadow DOM PiP button
+
+The old `eval_tab` command (which accepted arbitrary JS strings) was removed in v0.5.0.
+
+### Content Security Policy
+
+The main UI webview has a strict CSP defined in `tauri.conf.json`. This blocks inline scripts, restricts connections, and prevents XSS in the privileged context. Child webviews are untrusted content and run with whatever CSP the visited site sets.
+
+## Input Sanitization
+
+### Tab Titles
+
+The `on_document_title_changed` callback in Rust strips `<` and `>` from all titles before emitting to React. This prevents stored XSS via malicious `<title>` tags that could execute in the sidebar when rendered.
+
+Session restore applies the same sanitization when rebuilding tabs from disk.
+
+### URL Scheme Blocklist
+
+`javascript:`, `data:`, `file:`, `vbscript:`, `blob:` schemes are blocked in three places:
+- `create_tab` — before creating the webview
+- `navigate_tab` — before navigating an existing webview
+- `on_navigation` callback — before allowing any in-page navigation
+
+React-side validation (`sanitizePanelUrl()`) adds defense-in-depth for panel URLs, stripping control characters and rejecting dangerous schemes before any Rust `invoke` call.
+
+### Find-in-Page
+
+Search queries are escaped for `\n`, `\r`, `\`, and `'` before being passed to `window.find()`. Prevents string context breakout in the eval.
+
+## Script Injection Hardening
+
+### Guard Variables
+
+All four injection scripts (`shortcut_bridge.js`, `media_listener.js`, `content_blocker.js`, `cookie_blocker.js`) use `Object.defineProperty` with `configurable: false` to register their guard variables. A malicious page can't `delete window.__bushidoPrivacy` to re-trigger script injection.
+
+### No Isolated Worlds (Windows Limitation)
+
+WebView2 on Windows does not support Chrome's "Isolated Worlds" for content scripts. Injected scripts share the page's global JavaScript namespace. This means:
+- A page could theoretically override `fetch` or `XMLHttpRequest` before Bushido's scripts run
+- Prototype pollution could alter injected script behavior
+
+Mitigations:
+- Using `Object.defineProperty` with `configurable: false` for all guards
+- Running network blocking at the COM level (unaffected by JS namespace pollution)
+- Keeping injected scripts minimal — they only handle cosmetic hiding and privacy headers
+
+## Network Security
+
+### Ad Blocking at the COM Level
+
+Bushido uses Brave's [adblock-rust](https://github.com/nicoverbruggen/adblock-rust) engine with ~140,000 filter rules from EasyList and EasyPrivacy. Requests are intercepted via WebView2's `WebResourceRequestedEventHandler` at the COM level — before the browser starts the connection.
+
+This catches scripts, images, iframes, XHR, fetch, CSS, fonts, and websockets. Page JavaScript cannot bypass it because the interception happens in the native layer, not in the JS runtime.
+
+### HTTPS-Only Mode
+
+All `http://` URLs are upgraded to `https://`. If HTTPS-only mode is enabled, plain HTTP navigations are refused entirely. Applied in both the Rust URL processing and the `on_navigation` callback.
+
+### Known Network Gaps
+
+- **Service workers**: Once registered, a service worker can respond to fetch events without triggering `WebResourceRequested`. A tracker that registers a service worker on first visit could bypass blocking on subsequent visits.
+- **WebRTC**: STUN/TURN servers are blocked via content script, but WebRTC data channels may bypass network-level interception.
+- **QUIC/HTTP3**: Unclear whether WebView2's `WebResourceRequested` intercepts QUIC traffic. Needs investigation.
+- **DNS prefetch / speculative connections**: May leak DNS queries before the blocker can act.
+
+## Process Safety
+
+### Mutex Poisoning Recovery
+
+All `Mutex::lock().unwrap()` calls in `lib.rs` are replaced with `.lock().unwrap_or_else(|e| e.into_inner())`. If a thread panics while holding a lock, subsequent threads recover the data instead of cascading panics that crash the app.
+
+### Webview Lifecycle
+
+`close_tab` removes the tab ID from `WebviewState` before calling `wv.close()`. This prevents `layout_webviews` from trying to position a webview that's mid-destruction — the most likely cause of random crashes in earlier versions.
+
+### COM Error Recovery
+
+The unsafe WebView2 COM block uses `match` with early `return` instead of `.unwrap()`. If `CoreWebView2()` or `ICoreWebView2_4` cast fails (possible on older Windows versions), the webview still loads — it just doesn't get download interception or ad blocking.
+
+### Global Shortcut Registration
+
+Shortcut registration uses `.unwrap_or_else()` with a fallback to an empty builder. If another app holds a hotkey, Bushido starts without shortcuts instead of panic-crashing.
+
+## Download Security
+
+### Path Traversal Prevention
+
+`Path::file_name()` extracts only the basename from download filenames before deduplication. A server sending `Content-Disposition: attachment; filename="../../../etc/malicious"` can't write outside the download directory.
+
+### Cookie-Aware Downloads
+
+Downloads capture cookies from the originating tab via the WebView2 cookie manager COM API for authenticated downloads. Cookies are passed as a header string to the Rust download engine — they're never written to disk or exposed to other tabs.
+
+## Known Limitations
+
+Documented weaknesses not yet addressed:
+
+| Gap | Risk | Planned Fix |
+|-----|------|-------------|
+| Shared cookie jar | All tabs share one WebView2 User Data Folder. Cross-site tracking possible. | Per-site or per-workspace `CoreWebView2Profile` isolation |
+| No Tauri isolation pattern | No sandboxed iframe between untrusted content and IPC | Enable isolation pattern with dedicated bridge script |
+| Basic fingerprinting resistance | Only `navigator.plugins`, `mimeTypes`, `getBattery` blocked. Canvas, WebGL, AudioContext fingerprinting not mitigated. | Canvas noise, WebGL vendor spoofing, AudioContext jitter |
+| No per-window capabilities | All child webviews share the same Tauri capability set | Scope capabilities per webview label |
+| Service worker bypass | Registered service workers can respond without triggering network blocking | Investigate `ServiceWorkerRegistration` interception |
+
+## Found a Bug?
+
+[Open an issue](https://github.com/visualstudioblyat/bushido/issues). This is fully open source — no private disclosure process. File it like any other bug.
