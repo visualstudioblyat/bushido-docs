@@ -31,6 +31,7 @@ All shortcuts are registered globally via Rust — they work even when a webpage
 | `Ctrl+B` | Toggle sidebar |
 | `Ctrl+Shift+B` | Toggle compact mode |
 | `Ctrl+Shift+R` | Toggle reader mode |
+| `Ctrl+\` | Toggle split view |
 
 ## Workspaces
 
@@ -42,4 +43,4 @@ All shortcuts are registered globally via Rust — they work even when a webpage
 
 Bushido registers OS-level hotkeys through `tauri_plugin_global_shortcut`. When a shortcut fires, Rust evals a function on the main webview (`window.__bushidoGlobalShortcut`), which dispatches the action in React.
 
-Child webviews also have a fallback — `shortcut_bridge.js` captures keydown events and forwards them to Rust via title encoding, which then emits them as events to the main window.
+Child webviews also have a fallback — `shortcut_bridge.js` captures keydown events and forwards them to Rust via `postMessage`, which then emits them as events to the main window.

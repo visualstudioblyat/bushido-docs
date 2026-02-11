@@ -1,0 +1,39 @@
+---
+title: Web Panels
+description: Pin any site as a persistent sidebar webview
+---
+
+Web panels let you keep sites like Spotify, Discord, or WhatsApp open in a narrow panel between the sidebar and your content area. They stay open across tab switches and survive restarts.
+
+## Adding a Panel
+
+1. Click the **+** button in the panel icon row (below workspaces, above tabs)
+2. Pick a preset (Spotify, Discord, WhatsApp, YouTube Music, X, ChatGPT) or paste any URL
+3. The panel opens at 350px wide between the sidebar and your tabs
+
+## Using Panels
+
+- **Click a panel icon** to toggle it open/closed
+- **Right-click a panel icon** to remove it
+- Only one panel is visible at a time — clicking a different icon switches to it
+- Panels get a mobile user agent so sites serve mobile-friendly layouts at 350px
+
+## How It Works
+
+Panels are regular webviews created through the same `create_tab` pipeline — they get all the same security scripts, ad blocking, and cookie rejection. The difference is they're tracked separately in a `PanelState` so the tab layout engine doesn't hide them when repositioning tabs.
+
+When a panel is open, the content area shrinks by 350px. Close the panel and it snaps back.
+
+## Session Persistence
+
+Panels save with your session. Restart the browser and your panels are still there — click the icon to reactivate.
+
+## Compact Mode
+
+Panels hide when compact mode is active. The sidebar collapses to 3px and the panel goes with it.
+
+## Limitations
+
+- Fixed 350px width (not resizable yet)
+- One panel visible at a time
+- Some sites may not work well with mobile UA (especially OAuth flows like Google sign-in)

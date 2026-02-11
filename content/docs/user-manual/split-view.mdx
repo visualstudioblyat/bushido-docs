@@ -1,0 +1,37 @@
+---
+title: Split View
+description: View multiple tabs side by side
+---
+
+Split your window into up to 4 panes. Each pane shows a different tab. Drag the dividers to resize.
+
+## Opening a Split
+
+- `Ctrl+\` — splits the current pane and adds the most recently used tab
+- Right-click a tab → **Split with this tab**
+
+## Resizing
+
+Drag any divider between panes. Each pane has a minimum size of 15% so nothing gets too tiny.
+
+During a drag, webviews hide temporarily so the divider tracks smoothly (WebView2 child windows are native OS windows that steal mouse events).
+
+## Closing a Split
+
+- `Ctrl+\` when only one split exists — exits split view
+- Navigate to an internal page (`bushido://newtab`) in a pane to close that pane
+- Close the tab that's in a pane
+
+## Layout
+
+The split layout is a recursive tree — you can split horizontally or vertically, and splits can nest. Up to 4 panes total.
+
+## Session Persistence
+
+Your split layout saves with your session. Restart the browser and the same panes reappear with the same tabs.
+
+## Notes
+
+- Opening a new tab exits split view (keeps things simple — you're starting a new task)
+- The tab suspender skips any tab that's visible in a split pane
+- Each workspace has its own split state

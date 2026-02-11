@@ -1,0 +1,25 @@
+---
+title: Media Controls
+description: Control audio and video from the sidebar
+---
+
+When a tab is playing audio or video, a mini player bar appears at the bottom of the sidebar. Control playback without switching tabs.
+
+## What It Shows
+
+- Favicon and title of the tab playing media
+- Play/pause button
+- Mute button
+- Click the bar to switch to that tab
+
+## How It Works
+
+Bushido injects a media detection script into every page that polls for `<audio>` and `<video>` elements every 1.5 seconds. When it finds active media, it reports the state back to the sidebar via `postMessage` IPC.
+
+Polling is used instead of event listeners because YouTube and some other sites don't fire standard media events reliably in WebView2 initialization scripts.
+
+## Behavior
+
+- The media bar persists across tab switches — you can browse other tabs while music plays
+- Play/pause and mute send commands to the media tab without switching to it
+- If multiple tabs have media, the bar shows the most recently active one
