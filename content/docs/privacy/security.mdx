@@ -52,15 +52,17 @@ The main UI webview has a strict CSP defined in `tauri.conf.json`. This blocks i
 
 ## WebView2 Hardening
 
-Every child webview has these settings disabled at the COM level:
+Every child webview has these settings applied at the COM level:
 
-| Setting | Why |
-|---------|-----|
-| DevTools | CVE-2025-13632 — sandbox escape via crafted extensions |
-| Host Objects | Prevents unauthorized access to projected Rust methods |
-| Password Autosave | CVE-2025-14372 — use-after-free in Password Manager |
-| General Autofill | Reduces feature surface |
-| Status Bar | Prevents URL spoofing |
+| Setting | Default | Why |
+|---------|---------|-----|
+| Host Objects | Always OFF | Prevents unauthorized access to projected Rust methods |
+| DevTools | Toggleable | CVE-2025-13632 — sandbox escape via crafted extensions |
+| Password Autosave | Toggleable | CVE-2025-14372 — use-after-free in Password Manager |
+| General Autofill | Toggleable | Reduces feature surface |
+| Status Bar | Toggleable | Prevents URL spoofing |
+
+Host objects are always disabled. The other four are configurable in Settings → Security (all default to OFF for power-user friendliness).
 
 ## Process Isolation
 
@@ -86,10 +88,11 @@ The `on_document_title_changed` callback in Rust strips `<` and `>` from all tit
 
 ### URL Scheme Blocklist
 
-`javascript:`, `data:`, `file:`, `vbscript:`, `blob:` schemes are blocked in three places:
-- `create_tab` — before creating the webview
-- `navigate_tab` — before navigating an existing webview
-- `on_navigation` callback — before allowing any in-page navigation
+Dangerous URL schemes are blocked in three places: `create_tab`, `navigate_tab`, and the `on_navigation` callback.
+
+**Web schemes**: `javascript:`, `data:`, `file:`, `vbscript:`, `blob:`
+
+**Windows exploit schemes** (added v0.8.2): `ms-msdt:` (Follina CVE-2022-30190), `search-ms:`, `ms-officecmd:`, `ms-word:`, `ms-excel:`, `ms-powerpoint:`, `ms-cxh:`, `ms-cxh-full:` — these can trigger arbitrary code execution via Windows system tools.
 
 ### Find-in-Page
 
@@ -111,9 +114,11 @@ WebView2 on Windows does not support Chrome's "Isolated Worlds" for content scri
 
 `WebResourceRequested` runs for ALL tabs — even when ad blocking is off. Every outgoing request has these headers stripped or normalized:
 
-**Removed**: `Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, `Sec-CH-UA-Full-Version`, `Sec-CH-UA-Full-Version-List`, `Sec-CH-UA-Arch`, `Sec-CH-UA-Bitness`, `Sec-CH-UA-Model`, `Sec-CH-UA-Platform-Version`, `Sec-CH-UA-WoW64`, `Sec-Fetch-Dest`, `Sec-Fetch-Mode`, `Sec-Fetch-Site`, `Sec-Fetch-User`, `X-Client-Data`, `X-Requested-With`
+**Removed**: `Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, `Sec-CH-UA-Full-Version`, `Sec-CH-UA-Full-Version-List`, `Sec-CH-UA-Arch`, `Sec-CH-UA-Bitness`, `Sec-CH-UA-Model`, `Sec-CH-UA-Platform-Version`, `Sec-CH-UA-WoW64`, `X-Client-Data`, `X-Requested-With`
 
-**Normalized**: `Referer` — path stripped at COM level, only origin sent.
+**Normalized**: `Referer` — path stripped at COM level, only origin sent. `Accept-Language` — set to `en-US,en;q=0.9` to match the JS `navigator.language` spoof (prevents locale mismatch fingerprinting).
+
+**Not stripped**: `Sec-Fetch-Dest`, `Sec-Fetch-Mode`, `Sec-Fetch-Site`, `Sec-Fetch-User` — Chromium's network stack overwrites these headers *after* the `WebResourceRequested` handler runs. Stripping them is a no-op. This behavior is confirmed by Microsoft's WebView2 team and documented in Chromium's fetch metadata spec implementation.
 
 ### Ad Blocking at the COM Level
 
@@ -129,26 +134,46 @@ All `http://` URLs are upgraded to `https://`. Plain HTTP navigations are refuse
 
 ## Fingerprinting Resistance
 
-16 fingerprinting vectors mitigated via `content_blocker.js` injection:
+23 fingerprinting vectors mitigated via `content_blocker.js` injection + COM-level header normalization:
 
 | Vector | Mitigation |
 |--------|------------|
 | `navigator.plugins` / `mimeTypes` | Empty arrays |
 | `navigator.getBattery` | Undefined |
-| `navigator.hardwareConcurrency` | Returns 4 |
+| `navigator.hardwareConcurrency` | Firefox RFP logic: returns 8 if real count ≥ 8, else 4 |
 | `navigator.language` / `languages` | `en-US` / `['en-US','en']` |
 | `navigator.platform` | `Win32` |
 | `screen.availWidth/Height` | Matches `screen.width/height` |
 | `screen.colorDepth/pixelDepth` | Returns 24 |
-| Canvas | 1-bit XOR noise on `toDataURL`/`toBlob` |
+| Canvas | Per-session PRNG noise on `toDataURL`/`toBlob` (deterministic within session, unique across) |
 | WebGL vendor/renderer | Spoofed to generic Intel UHD |
 | AudioContext | ±0.01 random noise on `getFloatFrequencyData` |
+| `performance.now()` | Clamped to 16.67ms intervals + random jitter (anti-Spectre) |
 | `navigator.connection` | Undefined |
 | `document.fonts` | Stub object (blocks enumeration) |
 | Service Workers | Registration blocked |
 | WebRTC | STUN/TURN servers filtered |
+| `speechSynthesis.getVoices()` | Empty array (prevents TTS voice fingerprinting) |
+| `navigator.mediaDevices.enumerateDevices()` | Empty array (prevents hardware ID leaking) |
+| `navigator.storage.estimate()` | Fixed 1GB quota, 0 usage |
+| `navigator.webdriver` | Returns false |
+| `performance.memory` | Fixed values (Chrome-only heap size fingerprint) |
+| `Accept-Language` header | Normalized to `en-US,en;q=0.9` at COM level |
+| Spoofed function `.toString()` | Returns `[native code]` (anti-detection hardening) |
 
-## Crash Recovery
+Three additional vectors (service workers, font enumeration, hardwareConcurrency) are toggleable in Settings → Security for users who need PWA support or accurate core counts.
+
+## Crash Recovery & FFI Safety
+
+### COM Callback Safety
+
+All 5 COM event handlers (DownloadStarting, GetCookiesCompleted, WebResourceRequested, WebMessageReceived, ProcessFailed) are wrapped in `std::panic::catch_unwind` with `AssertUnwindSafe`. If any callback panics — due to a malformed URL, unexpected null pointer, or edge case — the panic is caught and the handler returns gracefully instead of unwinding across the Rust/C++ FFI boundary.
+
+Without this, a panic in any COM callback produces undefined behavior: typically an immediate process crash with access violation 0xc0000005. This is documented in the `windows-rs` crate — COM callbacks don't automatically catch Rust panics.
+
+### Environment Variable Injection Prevention
+
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` is cleared with `remove_var()` before being set with `set_var()`. This env var affects every WebView2 instance in the process. Without clearing, a malicious process running before Bushido could pre-populate it with flags like `--remote-debugging-port=9222` to enable remote debugging on all tabs.
 
 ### ProcessFailed Handler
 
