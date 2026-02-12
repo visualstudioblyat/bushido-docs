@@ -3,29 +3,38 @@ title: Tab Suspender
 description: Auto-suspend inactive tabs to save memory
 ---
 
-Tabs you haven't used in a while get suspended automatically. The webview is destroyed, freeing memory. The tab stays in your sidebar with a zzz badge so you know it's sleeping.
+Every tab is its own process. Each one eats 120-180MB of RAM. The tab suspender puts idle tabs to sleep so they stop hogging memory without losing your place.
 
-## How It Works
+## Three States
 
-- Bushido checks every 60 seconds for tabs that haven't been active
-- If a tab has been inactive longer than the timeout, it gets suspended
-- The webview is destroyed but the tab keeps its title, URL, and favicon
-- Click a suspended tab to restore it — the webview recreates and loads the page
+Bushido uses the same `TrySuspend` API that Edge uses for sleeping tabs. Tabs move through three states as they sit idle:
+
+| State | Memory | What happens when you click it | When |
+|-------|--------|-------------------------------|------|
+| **Active** | ~200MB | Already there | In use |
+| **Suspended** | ~30MB | Wakes up instantly — scroll position, form state, everything intact | Idle 2 min |
+| **Destroyed** | 0MB | Full page reload | Idle 5 min |
+
+Both suspended and destroyed tabs show a zzz badge in the sidebar. The difference is what happens when you click them — suspended tabs come back instantly, destroyed tabs reload from scratch.
 
 ## What Never Gets Suspended
 
-- **Pinned tabs** — they're always safe
-- **The active tab** — the one you're looking at
+- **The active tab** — obviously
+- **Tabs in split view** — if you can see it, it stays awake
+- **Pinned tabs** — always safe
+- **Tabs playing media** — Spotify in a background tab won't get killed
 - **Internal pages** — `bushido://newtab`, `bushido://settings`
 
 ## Configure the Timeout
 
 Settings → Appearance → Tab suspend timeout
 
-| Option | Description |
-|--------|-------------|
-| 5 minutes | Default — aggressive memory saving |
-| 10 minutes | A bit more relaxed |
-| 15 minutes | Moderate |
-| 30 minutes | Only suspend if you really forget about it |
-| Never | Disable tab suspending entirely |
+You set the destroy timeout. The suspend timeout is automatically 40% of that (capped at 2 minutes).
+
+| Setting | Suspends at | Destroys at |
+|---------|-----------|------------|
+| 5 min (default) | 2 min | 5 min |
+| 10 min | 4 min | 10 min |
+| 15 min | 6 min | 15 min |
+| 30 min | 12 min | 30 min |
+| Never | — | — |
