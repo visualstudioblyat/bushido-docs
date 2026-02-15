@@ -1,47 +1,101 @@
 ---
 title: Settings
-description: Configure search engine, privacy, appearance, and more
+description: Configure search engine, privacy, tabs, appearance, sync, and more
 ---
 
-Open settings from the gear icon in the sidebar, or navigate to `bushido://settings`. It's a React-rendered page — no webview, loads instantly.
+Open settings from the gear icon in the sidebar, or navigate to `bushido://settings`. It's a React-rendered page with a left sidebar nav and 11 tabbed sections.
 
-## Sections
-
-### General
+## General
 
 - **Search engine** — Google (default), DuckDuckGo, Brave Search, Bing, or custom URL with `%s` placeholder
-- **On startup** — Restore previous session or open a new tab
-- **Show top sites** — Toggle the frecency grid on the new tab page
-- **Show clock** — Toggle the clock on the new tab page
-- **Show greeting** — Toggle the time-based greeting
+- **Search suggestions** — show suggestions as you type in the address bar
+- **On startup** — restore previous session, open new tab, or open a specific page
+- **Homepage URL** — when startup is set to "Open specific page", this URL loads instead
+- **Default zoom level** — 80% to 150%, applied to new tabs
+- **Confirm before quitting** — show a dialog when closing the browser with multiple tabs open
 
-### Downloads
+## New Tab
 
-- **Download location** — Where files save (system default if empty)
-- **Ask where to save** — Prompt before every download
+Controls what shows on the new tab page.
 
-### Privacy & Security
+- **Show top sites** — toggle the frecency grid
+- **Top sites rows** — 1, 2, or 3 rows of sites
+- **Show clock** — toggle the clock
+- **Show greeting** — toggle the time-based greeting ("Good morning", etc.)
 
-- **HTTPS-only mode** — Upgrade all connections to HTTPS, refuse HTTP
-- **Ad blocker** — Toggle the content blocker on/off
-- **Cookie banner auto-reject** — Toggle automatic "reject all" on consent popups
-- **Clear data on exit** — Wipe history and cookies when closing
+## Downloads
 
-All of these actually control behavior. Turning off ad blocker stops injecting the content script. Turning off HTTPS-only allows HTTP navigation.
+- **Download location** — where files save (system default if empty)
+- **Ask where to save** — prompt before every download
+- **Bandwidth limit** — global speed cap across all active downloads (Unlimited, 512KB/s, 1MB/s, 2MB/s, 5MB/s, 10MB/s). Takes effect immediately.
+- **MIME routing** — configure per-type folder routing. Set a target folder for `image/`, `video/`, `audio/`, or `application/pdf` and downloads matching that type route there automatically. Leave empty to use the default download location.
 
-### Appearance
+## Tabs
 
-- **Compact mode** — Toggle compact mode (syncs with `Ctrl+Shift+B`)
-- **Tab suspend timeout** — How long before inactive tabs get suspended
+- **Tab suspend timeout** — how long before inactive tabs get suspended (5/10/15/30 minutes, or never)
+- **Suspend excluded URLs** — one URL per line, tabs matching these won't be suspended. Useful for keeping mail, music, or chat tabs alive.
+- **Select recently used tab on close** — switch to the last active tab instead of the adjacent one
+- **Confirm before closing multiple tabs** — show a warning when closing more than one tab at once
 
-### Keyboard Shortcuts
+## Privacy
 
-Read-only reference of all shortcuts.
+- **HTTPS-only mode** — upgrade all connections to HTTPS, refuse HTTP
+- **Ad blocker** — toggle the content blocker on/off
+- **Cookie banner auto-reject** — toggle automatic "reject all" on consent popups
+- **Clear data on exit** — wipe history and cookies when closing
+- **Block pop-ups** — prevent sites from opening new windows
+- **Block autoplay** — block all media, block audio only, or allow
 
-### About
+All of these actually control behavior. Turning off ad blocker stops injecting the content script. Turning off HTTPS-only allows HTTP navigation. Fingerprint protection is always on regardless of these settings.
 
-Version number and project description.
+## Security
+
+7 toggleable WebView2 hardening options. All default to OFF (power-user friendly). Paranoid users can flip them on:
+
+- **Disable DevTools** — prevents F12 / Inspect Element
+- **Disable status bar** — hides URL preview on link hover
+- **Disable autofill** — prevents form auto-completion
+- **Disable password autosave** — browser won't offer to save passwords
+- **Block service workers** — prevents SW-based tracker bypass (breaks PWAs)
+- **Block font enumeration** — stubs `document.fonts.check()`
+- **Spoof CPU core count** — reports `navigator.hardwareConcurrency` as 4 or 8
+
+When you change any security toggle, a banner appears: "Reload all tabs to apply changes." These settings are applied at webview creation time, so existing tabs need a reload to pick them up.
+
+## Permissions
+
+Shows all saved per-site permission decisions. Each row displays the domain, permission type, whether it was allowed or denied, and a revoke button.
+
+Revoking a saved permission means the site will be prompted again next time it requests access. See [Permission Prompts](/docs/user-manual/permissions) for how the prompt system works.
+
+## Appearance
+
+- **Accent color** — 8 colors to choose from. Controls active indicators, buttons, links, and focus rings.
+- **Theme mode** — Dark (default) or Light. Swaps all background and text colors.
+- **Compact mode** — toggle compact mode (syncs with `Ctrl+Shift+B`)
+- **Show media controls** — toggle the mini player bar in the sidebar
+- **Show domain only in URL bar** — hide the full path, show just the domain
+
+## Sync
+
+LAN sync configuration. Toggle sync on/off, set device name, view discovered and paired devices, manage data type toggles (bookmarks, history, settings, open tabs), and debug tools (loopback pairing/sync tests). See [LAN Sync](/docs/user-manual/lan-sync) for the full breakdown.
+
+## Keyboard Shortcuts
+
+Every shortcut is rebindable. Click any shortcut row to enter recording mode, press your new key combination, and it takes effect immediately. No restart needed.
+
+Shortcuts are grouped by category: Tab Management, Navigation, Features, and Zoom. Workspace switching (Ctrl+1-9) is not rebindable.
+
+Conflict detection prevents two actions from sharing the same key combo. Press Escape to cancel recording without changing anything.
+
+"Reset to defaults" button appears when any shortcut has been modified, and restores all original bindings.
+
+Keybindings persist to `settings.json` alongside all other settings. For the full default shortcut list, see [Keyboard Shortcuts](/docs/user-manual/shortcuts).
+
+## About
+
+Version number, project description, and a button to replay the onboarding wizard.
 
 ## Persistence
 
-Settings save to disk (debounced 500ms) and load before session restore on startup. They persist across restarts.
+Settings save to disk (debounced 500ms) and load before session restore on startup. They persist across restarts. New settings added in updates merge with existing saved settings using defaults for any missing fields.

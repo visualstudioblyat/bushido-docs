@@ -47,12 +47,48 @@ The download panel is a slide-over in the sidebar. Click the download icon to op
 
 The segment count badge (e.g. "6x") shows next to the speed while a chunked download is running.
 
+### Queue Priority
+
+Drag downloads in the panel to reorder them. Higher items get priority. When bandwidth is limited, downloads are served in priority order. New downloads start at the bottom.
+
+## Bandwidth Throttle
+
+Set a global speed limit across all active downloads so a large file doesn't eat your entire connection. Options:
+
+| Setting | Limit |
+|---------|-------|
+| Unlimited | No cap (default) |
+| 512 KB/s | Light browsing stays responsive |
+| 1 MB/s | Balanced |
+| 2 MB/s | |
+| 5 MB/s | |
+| 10 MB/s | Barely noticeable on fast connections |
+
+The limit applies across all simultaneous downloads and segments — not per-download. Set it in Settings > Downloads. Changes take effect immediately, no restart needed.
+
+## MIME Auto-Sort
+
+Downloads are automatically sorted into folders based on their file type. When a download starts, Bushido checks the server's `Content-Type` header and matches it against your routing rules. If Content-Type is missing, it falls back to extension-based detection.
+
+Default rules:
+
+| MIME Prefix | Target Folder |
+|-------------|---------------|
+| `image/` | (empty — uses default location) |
+| `video/` | (empty — uses default location) |
+| `audio/` | (empty — uses default location) |
+| `application/pdf` | (empty — uses default location) |
+
+Set a folder path for any rule in Settings > Downloads to activate it. For example, set `image/` to your Pictures folder and every downloaded image routes there automatically. Leave empty to use your default download location.
+
 ## Settings
 
 In `bushido://settings` under Downloads:
 
 - **Download location** — Where files save. Defaults to your system downloads folder.
 - **Ask where to save** — Prompt for a location before every download.
+- **Bandwidth limit** — Global speed cap across all downloads.
+- **MIME routing** — Per-type folder routing. Set a folder path for each MIME prefix.
 
 ## How It Compares
 

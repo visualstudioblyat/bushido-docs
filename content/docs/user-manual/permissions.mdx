@@ -1,0 +1,42 @@
+---
+title: Permission Prompts
+description: Custom permission prompts for camera, microphone, location, notifications, and more
+---
+
+When a site requests access to your camera, microphone, location, or other sensitive APIs, Bushido shows a custom glass-style prompt instead of the default Chromium dialog.
+
+## How It Works
+
+Bushido intercepts permission requests at the WebView2 COM level using the `PermissionRequested` event handler. When a site asks for a permission, the request is deferred — Chromium's decision is paused — and a banner slides in at the top of the content area showing what the site wants.
+
+You choose Allow or Deny. If "Remember" is checked (on by default), the decision is saved per-site so the prompt won't appear again for that domain and permission type.
+
+## Supported Permissions
+
+| Permission | Prompted? |
+|------------|-----------|
+| Microphone | Yes |
+| Camera | Yes |
+| Geolocation | Yes |
+| Notifications | Yes |
+| Clipboard Read | Yes |
+| MIDI | Yes |
+| Window Management | Yes |
+| File Read/Write | Yes |
+| Other Sensors | Yes |
+| Multiple Downloads | Auto-allowed |
+| Local Fonts | Auto-denied (fingerprint risk) |
+| Autoplay | Follows your autoplay policy in Settings > Privacy |
+
+## Saved Permissions
+
+Saved decisions are stored to disk and loaded on startup. When you revisit a site that you previously allowed or denied, the decision is applied automatically — no prompt shown.
+
+To view or manage saved permissions, go to Settings > Permissions. Each entry shows the domain, permission type, and whether it was allowed or denied. Click "Revoke" to remove a saved decision. The site will be prompted again on its next request.
+
+## Auto-Decisions
+
+Two permission types are handled automatically without showing a prompt:
+
+- **Multiple Downloads** — always allowed. Sites that trigger multiple file downloads (like "download all" buttons) work without interruption.
+- **Local Fonts** — always denied. Font enumeration is a high-entropy fingerprinting vector. Blocking it matches Bushido's fingerprint protection stance.
